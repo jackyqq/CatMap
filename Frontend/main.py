@@ -12,8 +12,6 @@ conn = pymysql.connect(host='10.242.202.17', port=3306, user='root', password='a
 cursor = conn.cursor(pymysql.cursors.DictCursor)
 cursor.execute("SELECT * FROM 100pdf")
 res = cursor.fetchall()
-thisid = 1
-print(res[len(res)-1])
 
 # 定义mapping
 mapping = {
