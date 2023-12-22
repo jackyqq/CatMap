@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional,List
 from fastapi.responses import FileResponse,StreamingResponse
 import httpx
+import database
 
 app = FastAPI(
     title="Catmap_api",
@@ -21,15 +22,18 @@ app.add_middleware(
 )
 
 class Item(BaseModel):
-    id : Optional[str] = None
-    year : Optional[int] = None
-    author : Optional[str] = None
-    keywords : Optional[str] = None
+    All_Fields : Optional[str] = None
+    Title : Optional[int] = None
+    Author_Affiliation : Optional[str] = None
+    Keywords : Optional[str] = None
+    Year : Optional[str] = None
+    Journal : Optional[str] = None
+    Abstract : Optional[str] = None
 
 
 
 #简单搜索
-@app.get('/search_easy')
+@app.get('/api/search_easy')
 async def search_papers(request : Request):
     data = await request.json()
     papers = Search(data)
@@ -38,7 +42,7 @@ async def search_papers(request : Request):
 
 #复杂搜索
 @app.post("/search_difficult")
-async def search_papers(item : Item = Body(..., title="search_body",description="ID_Years_author_keywords", example="Carlson")):
+async def search_papers(item : Item = Body(..., title="search_body",description="a string of content", example="Carlson")):
     papers = Search(item)
     #print(papers)
     return papers
@@ -55,6 +59,7 @@ async def download_pdf():
     file_path = "path/to/your/pdf-file.pdf"  # 将这里的路径替换为你的 PDF 文件的实际路径
     return FileResponse(path=file_path, media_type='application/pdf', filename="downloaded_file.pdf")
 
+
 async def download_pdf():
     pdf_url = "http://example.com/path/to/your/pdf"  # 替换为实际的 PDF 文件 URL
 
@@ -64,6 +69,13 @@ async def download_pdf():
 
         return StreamingResponse(response.iter_bytes(), media_type=response.headers['Content-Type'])
 
+@app.get("/api/papers/details")
+async def get_paper_detail(id : str = Query(..., title = "get_details", description="from the id to details", example = "1")):
+    papers = Search(id)
+    #Search函数内部已经连接好数据库，并能实现对id的搜索
+    return papers
+    # eg_papers = {"author":"xmm", "abstract" : "xmmwd", "pdf_url" : "http://example.com/123"}
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("run:app", host = '127.0.0.1', port = 8000, reload = True, workers = 1)
