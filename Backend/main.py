@@ -1,12 +1,12 @@
 import pymysql
 import json
 import textwrap
+from typing import Optional
 from elasticsearch import Elasticsearch
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Body
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-
 
 def mappingMake():   
     # 定义mapping
@@ -113,6 +113,46 @@ def indexCreate():
     es.bulk(body=act)
     return es
 
+def process_search_results(res):
+    # 初始化结果字典
+    processed_results = {
+        "awei": [],
+        "yt": {"years": [], "counts": []}
+    }
+
+    # 用于存储每个年份的出现次数
+    year_counts = {}
+
+    # 遍历搜索结果
+    for hit in res['hits']['hits']:
+        # 获取每一条搜索结果的年份、标题、作者和摘要
+        id = hit['_id']
+        year = hit['_source']['year']
+        title = hit['_source']['title']
+        authors = hit['_source']['author']
+        abstract = hit['_source']['abstract']
+        
+        # 构建awei列表的元素，只包含title, author, abstract
+        processed_results['awei'].append({
+            'id' : id,
+            'title': title,
+            'author': authors,
+            'abstract': abstract
+        })
+
+        # 统计年份出现的次数
+        if year in year_counts:
+             year_counts[year] += 1
+        else:
+            year_counts[year] = 1
+    for year, count in sorted(year_counts.items()):
+        processed_results["yt"]["years"].append(year)
+        processed_results["yt"]["counts"].append(count)
+
+    return processed_results
+
+
+
 app = FastAPI()
 
 # 设置 CORS 以允许跨域请求，特别是来自前端应用的请求
@@ -124,62 +164,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/search")
+class SearchRequest(BaseModel):
+    term: str
+    selected_option: Optional[str] = None
 
-async def search_papers(request:Request):
-    
+@app.post("/search")
+
+async def search(request: SearchRequest = Body(...)):
+    term = request.term
+    selected_option = request.selected_option
+    print(term)
+    print(selected_option)
     es = indexCreate()
     # 获取查询参数
-    query = request.query_params.get('query')
-    title = request.query_params.get('title', False)
-    author = request.query_params.get('author', False)
-    keywords = request.query_params.get('keywords', False)
     #配置查询参数
-    thisCriteria = {"title": title, "author": author, "keywords": keywords}
-    #print(thisCriteria)
+
+    
     criteria = []
-    for key, value in thisCriteria.items():
-      if value == True:
-        criteria.append(key)
-    if len(criteria) == 0:
-       criteria = ["author", "title", "keywords"]
+    if (selected_option == "all fields" or selected_option == ""):
+        criteria = ["keywords", "author", "title", "year", "journal", "abstract"]
+    else:
+        if (selected_option == "author or affiliation"):
+            criteria = "author"
+        else:
+            criteria = selected_option
     es.indices.refresh(index="paper")
     nested_fields = ["author.name", "author.affiliation"]
-    normal_fields = [field for field in criteria if field != "author"]
-    highlight_fields = {field: {} for field in normal_fields}
+    
     main_query = {"bool": {"should": []}}
 
-    if "author" in criteria:
+    if criteria == "author":
         nested_query = {
             "nested": {
                 "path": "author",
                 "query": {
                     "multi_match": {
-                        "query": query,
+                        "query": term,
                         "fields": nested_fields
                     }
                 }
             }
         }
         main_query["bool"]["should"].append(nested_query)
-        criteria.remove("author")
+        
 
-    if criteria:  # 如果还有其它字段
+    else:  # 如果还有其它字段
         main_query["bool"]["should"].append({
             "multi_match": {
-                "query": query,
+                "query": term,
                 "fields": criteria
             }
         })
     #开始查询
-    res = es.search(index="paper", body={"query": main_query, "highlight": {
-            "fields": highlight_fields,  # 对所有搜索字段应用高亮
-
-            "pre_tags": ["<em>"],  # 高亮文本的开始标签
-            "post_tags": ["</em>"],  # 高亮文本的结束标签
-        }})
-    #print(res)
-    return res
+    res = es.search(index="paper", body={"query": main_query})
+    realRes = process_search_results(res)
+    print(realRes)
+    return realRes
 
 if __name__ == "__main__":
     import uvicorn 
